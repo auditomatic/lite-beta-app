@@ -1,0 +1,1 @@
+function e(e,o){const c=URL.createObjectURL(e),t=document.createElement("a");t.href=c,t.download=o,document.body.appendChild(t),t.click(),document.body.removeChild(t),URL.revokeObjectURL(c)}export{e as downloadBlob};
