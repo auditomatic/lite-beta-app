@@ -1,0 +1,1 @@
+function t(t){if(!t||0===t)return"0.00";const e=1e6*t;return e<.01?e.toFixed(4):e<1?e.toFixed(3):e<10?e.toFixed(2):e<100?e.toFixed(1):e.toFixed(0)}function e(t){const e=Math.abs(t);if(0===e)return"—";if(e<.005){const t=e.toExponential().match(/(\d)\.?\d*e-(\d+)/);if(t){const n=parseInt(t[2])+1;return`$${e.toFixed(n)}`}}return`$${e.toFixed(2)}`}export{e as a,t as f};
