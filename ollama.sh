@@ -82,36 +82,54 @@ fi
 
 # Create launch agent for persistence
 LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
-LAUNCH_AGENT_FILE="$LAUNCH_AGENT_DIR/com.auditomatic.ollama.environment.plist"
+LAUNCH_AGENT_FILE="$LAUNCH_AGENT_DIR/setenv.OLLAMA_ORIGINS.plist"
 
 status "Creating persistent configuration..."
 mkdir -p "$LAUNCH_AGENT_DIR"
 
+# Remove old version if exists
+if [ -f "$LAUNCH_AGENT_FILE" ]; then
+    status "Removing existing configuration..."
+    launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true
+    rm -f "$LAUNCH_AGENT_FILE"
+fi
+
+# Create the plist with proper formatting
 cat > "$LAUNCH_AGENT_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>com.auditomatic.ollama.environment</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/launchctl</string>
-        <string>setenv</string>
-        <string>OLLAMA_ORIGINS</string>
-        <string>$AUDITOMATIC_ORIGINS</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
+  <key>Label</key>
+  <string>setenv.OLLAMA_ORIGINS</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/launchctl</string>
+    <string>setenv</string>
+    <string>OLLAMA_ORIGINS</string>
+    <string>$AUDITOMATIC_ORIGINS</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
 </dict>
 </plist>
 EOF
 
-# Load the launch agent (without sudo to avoid SIP issues)
-launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true
-if ! launchctl load "$LAUNCH_AGENT_FILE" 2>/dev/null; then
-    warning "Could not load launch agent automatically. You may need to restart your Mac."
-    warning "Or manually run: launchctl load $LAUNCH_AGENT_FILE"
+# Validate the plist
+if ! plutil -lint "$LAUNCH_AGENT_FILE" >/dev/null 2>&1; then
+    error "Invalid plist file created. Please check the configuration."
+fi
+
+# Load the launch agent
+status "Loading launch agent..."
+if launchctl load "$LAUNCH_AGENT_FILE" 2>&1 | grep -q "already loaded"; then
+    warning "Launch agent was already loaded. Unloading and reloading..."
+    launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true
+    sleep 1
+    launchctl load "$LAUNCH_AGENT_FILE" 2>/dev/null || warning "Could not reload launch agent"
+elif ! launchctl load "$LAUNCH_AGENT_FILE" 2>/dev/null; then
+    warning "Could not load launch agent. This often happens due to macOS security restrictions."
+    warning "Try logging out and back in, or restart your Mac."
 fi
 
 # Restart Ollama if it was running

@@ -34,8 +34,25 @@ if [ -f "$CONFIG_FILE" ]; then
     cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
 fi
 
-# Write the config with CORS settings
-cat > "$CONFIG_FILE" << 'EOF'
+# Create or update the Ollama config
+status "Writing Ollama configuration..."
+
+# Check if config exists and has content
+if [ -f "$CONFIG_FILE" ] && [ -s "$CONFIG_FILE" ]; then
+    # Try to parse existing config
+    if command -v jq >/dev/null 2>&1; then
+        # If jq is available, merge configs properly
+        echo '{
+  "origins": [
+    "https://*.auditomatic.org",
+    "http://localhost:3000",
+    "http://localhost:5173", 
+    "http://localhost:5174"
+  ]
+}' | jq -s '.[0] * .[1]' "$CONFIG_FILE" - > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    else
+        # No jq, just overwrite
+        cat > "$CONFIG_FILE" << 'EOF'
 {
   "origins": [
     "https://*.auditomatic.org",
@@ -45,6 +62,20 @@ cat > "$CONFIG_FILE" << 'EOF'
   ]
 }
 EOF
+    fi
+else
+    # Create new config
+    cat > "$CONFIG_FILE" << 'EOF'
+{
+  "origins": [
+    "https://*.auditomatic.org",
+    "http://localhost:3000",
+    "http://localhost:5173", 
+    "http://localhost:5174"
+  ]
+}
+EOF
+fi
 
 success "Configuration saved to $CONFIG_FILE"
 
