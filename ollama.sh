@@ -32,11 +32,16 @@ else
     trap "rm -rf $TEMP_DIR" EXIT
     
     # Download the Ollama macOS app
-    curl -L -o "$TEMP_DIR/Ollama.zip" "https://ollama.com/download/Ollama-darwin.zip"
+    status "Downloading Ollama (this may take a minute)..."
+    if ! curl -fL -o "$TEMP_DIR/Ollama.zip" "https://ollama.com/download/Ollama-darwin.zip"; then
+        error "Failed to download Ollama. Please check your internet connection and try again."
+    fi
     
     status "Extracting Ollama..."
     cd "$TEMP_DIR"
-    unzip -q Ollama.zip
+    if ! unzip -q Ollama.zip; then
+        error "Failed to extract Ollama.zip"
+    fi
     
     status "Installing Ollama to /Applications..."
     # Remove old version if exists
@@ -69,7 +74,11 @@ AUDITOMATIC_ORIGINS="https://*.auditomatic.org,http://localhost:3000,http://loca
 
 # For immediate use (until restart)
 status "Setting OLLAMA_ORIGINS for current session..."
-launchctl setenv OLLAMA_ORIGINS "$AUDITOMATIC_ORIGINS"
+# Don't use sudo to avoid SIP issues
+if ! launchctl setenv OLLAMA_ORIGINS "$AUDITOMATIC_ORIGINS" 2>/dev/null; then
+    warning "Could not set environment variable for current session due to System Integrity Protection."
+    warning "The configuration will take effect after restarting your Mac or Ollama."
+fi
 
 # Create launch agent for persistence
 LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
@@ -98,8 +107,12 @@ cat > "$LAUNCH_AGENT_FILE" << EOF
 </plist>
 EOF
 
-# Load the launch agent
-launchctl load "$LAUNCH_AGENT_FILE" 2>/dev/null || launchctl unload "$LAUNCH_AGENT_FILE" && launchctl load "$LAUNCH_AGENT_FILE"
+# Load the launch agent (without sudo to avoid SIP issues)
+launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true
+if ! launchctl load "$LAUNCH_AGENT_FILE" 2>/dev/null; then
+    warning "Could not load launch agent automatically. You may need to restart your Mac."
+    warning "Or manually run: launchctl load $LAUNCH_AGENT_FILE"
+fi
 
 # Restart Ollama if it was running
 if [ "$OLLAMA_RUNNING" = true ]; then
@@ -111,13 +124,22 @@ fi
 
 # Test the installation
 status "Testing Ollama installation..."
-if ollama list >/dev/null 2>&1; then
-    success "Ollama is working correctly!"
+# Use timeout to prevent hanging
+if command -v timeout >/dev/null 2>&1; then
+    if timeout 5 ollama list >/dev/null 2>&1; then
+        success "Ollama is working correctly!"
+    else
+        warning "Ollama is not responding. Starting Ollama..."
+        open -a Ollama 2>/dev/null || warning "Could not start Ollama automatically"
+    fi
 else
-    warning "Ollama command is available but the service might not be running."
-    status "Starting Ollama..."
-    open -a Ollama
-    sleep 3
+    # macOS might not have timeout command, use alternative
+    if perl -e "alarm 5; exec @ARGV" ollama list >/dev/null 2>&1; then
+        success "Ollama is working correctly!"
+    else
+        warning "Ollama is not responding. Starting Ollama..."
+        open -a Ollama 2>/dev/null || warning "Could not start Ollama automatically"
+    fi
 fi
 
 echo ""
@@ -129,11 +151,29 @@ echo "  - http://localhost:3000 (development)"
 echo "  - http://localhost:5173 (Vite dev server)"
 echo "  - http://localhost:5174 (Vite dev server alternate)"
 echo ""
-status "To verify the configuration, run:"
-echo "  launchctl getenv OLLAMA_ORIGINS"
+
+# Check if we need a restart
+if [ "$OLLAMA_RUNNING" = true ]; then
+    warning "IMPORTANT: You need to restart Ollama for the changes to take effect."
+    echo ""
+    echo "Option 1: Quit Ollama from the menu bar and restart it"
+    echo "Option 2: Run these commands:"
+    echo "  killall Ollama"
+    echo "  open -a Ollama"
+else
+    status "Starting Ollama with the new configuration..."
+    open -a Ollama 2>/dev/null || warning "Please start Ollama manually"
+fi
+
 echo ""
 status "To start using Ollama with Auditomatic Lite:"
 echo "  1. Make sure Ollama is running (check menu bar)"
 echo "  2. Pull a model: ollama pull llama3.2"
 echo "  3. Visit https://lite.auditomatic.org and enable Ollama in settings"
+echo ""
+
+# Alternative approach for persistent environment
+status "Note: Due to macOS security restrictions, you may need to set OLLAMA_ORIGINS manually."
+echo "Add this line to your ~/.zshrc or ~/.bash_profile:"
+echo "  export OLLAMA_ORIGINS=\"$AUDITOMATIC_ORIGINS\""
 echo ""
